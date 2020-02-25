@@ -1,0 +1,97 @@
+# -*- coding: utf-8 -*-
+
+# Form implementation generated from reading ui file 'create_table.ui'
+#
+# Created by: PyQt5 UI code generator 5.14.1
+#
+# WARNING! All changes made in this file will be lost!
+
+
+from PyQt5 import QtCore, QtGui, QtWidgets
+
+
+class Ui_Dialog(object):
+    def setupUi(self, Dialog):
+        Dialog.setObjectName("Dialog")
+        Dialog.resize(1005, 434)
+        self.verticalLayout = QtWidgets.QVBoxLayout(Dialog)
+        self.verticalLayout.setObjectName("verticalLayout")
+        self.label = QtWidgets.QLabel(Dialog)
+        font = QtGui.QFont()
+        font.setPointSize(36)
+        self.label.setFont(font)
+        self.label.setAlignment(QtCore.Qt.AlignCenter)
+        self.label.setObjectName("label")
+        self.verticalLayout.addWidget(self.label)
+        self.horizontalLayout_3 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_3.setObjectName("horizontalLayout_3")
+        self.table_name = QtWidgets.QLineEdit(Dialog)
+        self.table_name.setReadOnly(False)
+        self.table_name.setObjectName("table_name")
+        self.horizontalLayout_3.addWidget(self.table_name)
+        self.horizontalLayout_4 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_4.setObjectName("horizontalLayout_4")
+        self.path_line = QtWidgets.QLineEdit(Dialog)
+        self.path_line.setReadOnly(True)
+        self.path_line.setObjectName("path_line")
+        self.horizontalLayout_4.addWidget(self.path_line)
+        self.specify_path_button = QtWidgets.QPushButton(Dialog)
+        self.specify_path_button.setObjectName("specify_path_button")
+        self.horizontalLayout_4.addWidget(self.specify_path_button)
+        self.horizontalLayout_4.setStretch(0, 3)
+        self.horizontalLayout_4.setStretch(1, 1)
+        self.horizontalLayout_3.addLayout(self.horizontalLayout_4)
+        self.horizontalLayout_3.setStretch(0, 1)
+        self.horizontalLayout_3.setStretch(1, 2)
+        self.verticalLayout.addLayout(self.horizontalLayout_3)
+        self.horizontalLayout = QtWidgets.QHBoxLayout()
+        self.horizontalLayout.setObjectName("horizontalLayout")
+        self.add_field_button = QtWidgets.QPushButton(Dialog)
+        font = QtGui.QFont()
+        font.setPointSize(14)
+        self.add_field_button.setFont(font)
+        self.add_field_button.setObjectName("add_field_button")
+        self.horizontalLayout.addWidget(self.add_field_button)
+        self.help_button = QtWidgets.QPushButton(Dialog)
+        font = QtGui.QFont()
+        font.setPointSize(14)
+        self.help_button.setFont(font)
+        self.help_button.setObjectName("help_button")
+        self.horizontalLayout.addWidget(self.help_button)
+        spacerItem = QtWidgets.QSpacerItem(40, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
+        self.horizontalLayout.addItem(spacerItem)
+        self.create_table_button = QtWidgets.QPushButton(Dialog)
+        font = QtGui.QFont()
+        font.setPointSize(14)
+        self.create_table_button.setFont(font)
+        self.create_table_button.setObjectName("create_table_button")
+        self.horizontalLayout.addWidget(self.create_table_button)
+        self.verticalLayout.addLayout(self.horizontalLayout)
+        self.layout_table = QtWidgets.QTableWidget(Dialog)
+        self.layout_table.setObjectName("layout_table")
+        self.layout_table.setColumnCount(0)
+        self.layout_table.setRowCount(3)
+        item = QtWidgets.QTableWidgetItem()
+        self.layout_table.setVerticalHeaderItem(0, item)
+        item = QtWidgets.QTableWidgetItem()
+        self.layout_table.setVerticalHeaderItem(1, item)
+        item = QtWidgets.QTableWidgetItem()
+        self.layout_table.setVerticalHeaderItem(2, item)
+        self.verticalLayout.addWidget(self.layout_table)
+
+        self.retranslateUi(Dialog)
+        QtCore.QMetaObject.connectSlotsByName(Dialog)
+
+    def retranslateUi(self, Dialog):
+        _translate = QtCore.QCoreApplication.translate
+        Dialog.setWindowTitle(_translate("Dialog", "Dialog"))
+        self.label.setText(_translate("Dialog", "Создать таблицу"))
+        self.table_name.setPlaceholderText(_translate("Dialog", "Имя таблицы"))
+        self.specify_path_button.setText(_translate("Dialog", "Выбрать путь"))
+        self.add_field_button.setText(_translate("Dialog", "Добавить поле"))
+        self.help_button.setText(_translate("Dialog", "Помощь"))
+        self.create_table_button.setText(_translate("Dialog", "Создать таблицу"))
+        item = self.layout_table.verticalHeaderItem(0)
+        item.setText(_translate("Dialog", "Имя поля"))
+        item = self.layout_table.verticalHeaderItem(1)
+        item.setText(_translate("Dialog", "Макс длина"))
