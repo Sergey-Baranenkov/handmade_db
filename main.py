@@ -6,8 +6,7 @@ from PyQt5.QtGui import QColor, QRegExpValidator
 from os import access, W_OK, R_OK, X_OK, chdir, mkdir, chmod, makedirs, remove
 from shutil import rmtree
 from os.path import basename, isfile, getsize
-from hashlib import sha3_512 as hasher
-import fnv
+from hashlib import sha3_256 as hasher
 from collections import OrderedDict
 
 primary_color = QColor(176, 224, 230)
@@ -15,6 +14,8 @@ white_color = QColor(255, 255, 255)
 db_encoding = "cp1251"
 spec_symbol = "‡"
 regex = QRegExp("[^{0}]*".format(spec_symbol))
+uf_fname = "test.f"
+
 
 def check_encoding(string, encoding):
     try:
@@ -22,6 +23,60 @@ def check_encoding(string, encoding):
         return True
     except UnicodeEncodeError:
         return False
+
+
+def show_critical_message(message):
+    msg = QtWidgets.QMessageBox()
+    msg.setIcon(QtWidgets.QMessageBox.Critical)
+    msg.setText(message)
+    msg.exec()
+
+
+def show_information_message(message):
+    msg = QtWidgets.QMessageBox()
+    msg.setIcon(QtWidgets.QMessageBox.Information)
+    msg.setText(message)
+    msg.exec()
+
+
+def get_indexes(path, field_name):
+    print("PATH:", path)
+    path = path + "/" + uf_fname
+    if not isfile(path):
+        return None, None
+    # файл найден
+    i = 0
+    with open(path, "r", encoding=db_encoding) as f:
+        for line in f:
+            print("line",line)
+            i += len(line)
+            line = line.rstrip().split(":", maxsplit=1)
+            print("i", i,[int(idx) for idx in line[1].split()])
+            if line[0] == field_name:
+                return [int(idx) for idx in line[1].split()], i
+    return None, None
+
+
+def get_hash_path(word):
+    #h = hasher(word.encode()).hexdigest()
+    h = "aa"
+    hp = "/".join([h[i:i + 2] for i in range(0, len(h), 2)])
+    return hp
+
+
+def get_unique_indexes(columns, paths_needed=False):
+    paths_hashes = {}
+    indexes = None
+    field_found_flag = False
+    for header, value in columns.items():
+        if value == "_*":
+            continue
+        try:
+           pass
+        except:
+            indexes = set()
+            break
+    return indexes, paths_hashes
 
 
 class Main_window(QtWidgets.QMainWindow):
@@ -54,80 +109,98 @@ class Main_window(QtWidgets.QMainWindow):
         else:
             self.ui.stackedWidget.setCurrentIndex(0)
 
+
+    def add_row(self):
+        columns = self.get_field(self.ui.small_input_table, 0)
+
+        for header, value in columns.items():
+            if not check_encoding(value, db_encoding):
+                show_critical_message("Поле {0} не соответствует доступным символам!".format(header))
+                return
+            elif value == "_*":
+                show_critical_message("_* - зарезервированный символ для поиска по всему полю")
+                return
+
+            # если primary key
+            if self.fields[header][1] == 1:
+                if len(value) == 0:
+                    show_critical_message("Primary key поле {0} не заполнено!".format(header))
+                    return
+
+                hash_path = get_hash_path(value)
+                if get_indexes(header + "/" + hash_path, value)[0] is not None:
+                    show_critical_message("Primary key {0} уже существует!".format(header))
+                    return
+
+                p_hashes[value] = hash_path
+
+            elif len(value) > self.fields[header][0]:
+                show_critical_message(
+                    "Поле {0} превышает допустимую длину на {1}!".format(header, len(value) - self.fields[header][0]))
+                return
+
+        with open("gaps.txt", "r+", encoding=db_encoding) as gaps:
+            all_gaps = gaps.read().split()
+            write_index = int(all_gaps.pop()) if all_gaps else int(getsize("main_table.txt") / self.strlen)
+            gaps.truncate(0)
+            if all_gaps:
+                gaps.write(" ".join(all_gaps) + " ")
+
+        print("write_index", write_index)
+        # формируем строку для записи и добавляем индексы
+        record_string = ""
+        for header, value in columns.items():
+            record_string += value.ljust(self.fields[header][0], spec_symbol)
+            hash_path_with_root = header + "/" + (
+                get_hash_path(value) if p_hashes.get(value) is None else p_hashes[value])
+            makedirs(hash_path_with_root, exist_ok=True)
+            open(hash_path_with_root + "/" + uf_fname, "a", encoding=db_encoding).close()
+
+            indexes, i = get_indexes(hash_path_with_root, value)
+            print("indexes, i", indexes, i)
+
+            with open(hash_path_with_root + "/" + uf_fname, "r+", encoding=db_encoding) as file:
+                ending = ""
+                if i is not None:
+                    file.seek(i)
+                    ending = file.read()
+                    file.truncate(i - 1)
+
+                file.seek(0, 2)
+
+                start = "{0}:".format(value) if indexes is None else ""
+                file.write(start + str(write_index) + " \n" + ending)
+
+        with open("main_table.txt", "r+", encoding=db_encoding) as mt_file:
+            mt_file.seek(write_index * self.strlen)
+            mt_file.write(record_string)
+
+
     def executor(self):
         p_hashes = {}
-        record_string = ""
         if self.ui.add_r.isChecked():
-            columns = self.get_field(self.ui.small_input_table, 0)
-            for header, value in columns.items():
-                if not check_encoding(value, db_encoding):
-                    msg = QtWidgets.QMessageBox()
-                    msg.setIcon(QtWidgets.QMessageBox.Critical)
-                    msg.setText("Поле {0} не соответствует доступным символам!".format(header))
-                    msg.exec()
-                    return
-                elif value == "_*":
-                    msg = QtWidgets.QMessageBox()
-                    msg.setIcon(QtWidgets.QMessageBox.Critical)
-                    msg.setText("_* - зарезервированный символ для поиска по всему полю".format(header))
-                    msg.exec()
-                    return
-
-                if self.fields[header][1] == 1:
-                    if len(value) == 0:
-                        msg = QtWidgets.QMessageBox()
-                        msg.setIcon(QtWidgets.QMessageBox.Critical)
-                        msg.setText("Primary key поле {0} не заполнено!".format(header))
-                        msg.exec()
-                        return
-
-                    hash_path = self.get_hash_path(value)
-                    if isfile("/".join([header, hash_path, fnv.fnv32a(value)])):
-                        msg = QtWidgets.QMessageBox()
-                        msg.setIcon(QtWidgets.QMessageBox.Critical)
-                        msg.setText("Primary key {0} уже существует!".format(header))
-                        msg.exec()
-                        return
-                    p_hashes[value] = hash_path
-
-                elif len(value) > self.fields[header][0]:
-                    msg = QtWidgets.QMessageBox()
-                    msg.setIcon(QtWidgets.QMessageBox.Critical)
-                    msg.setText("Поле {0} превышает допустимую длину на {1}!".format(header,
-                                                                                     len(value) - self.fields[header][
-                                                                                         0]))
-                    msg.exec()
-                    return
-
-            for header, info in self.fields.items():
-                val = columns[header]
-                record_string += val.ljust(info[0], spec_symbol)
-
-                if p_hashes.get(val) is not None:
-                    hash_path = p_hashes[val]
-                else:
-                    hash_path = self.get_hash_path(val)
-
-                makedirs(header + "/" + hash_path, exist_ok=True)
-
-                with open("/".join([header, hash_path, fnv.fnv32a(val)]), "a") as file:
-                    file.write(str(int(getsize("main_table.txt") / self.strlen)) + " ")
-
-            with open("main_table.txt", "a", encoding=db_encoding) as main_table:
-                main_table.write(record_string)
-
+            self.add_row()
         elif self.ui.select_r.isChecked():
             self.ui.main_table.setRowCount(0)
-            indexes = self.get_unique_indexes(self.get_field(self.ui.small_input_table, 0))[0]
+            indexes = get_unique_indexes(self.get_field(self.ui.small_input_table, 0))[0]
             el_count = 0
             max_count = self.ui.count.value()
+
             if indexes is None:
-                with open("main_table.txt", "r", encoding=db_encoding) as f:
+                with open("main_table.txt", "r", encoding=db_encoding) as f, open("gaps.txt", "r", encoding=db_encoding) as gaps:
+                    print(gaps.read().split())
+                    gaps_dict = {}.fromkeys([int(i) for i in gaps.read().split()], True)
                     while field := f.read(self.strlen):
+                        if gaps_dict.get(el_count) is not None:
+                            el_count += 1
+                            max_count += 1
+                            continue
+
                         if el_count >= max_count:
                             break
                         self.main_table_add_row(self.string_splitter(field))
                         el_count += 1
+
             elif len(indexes):
                 with open("main_table.txt", "r", encoding=db_encoding) as f:
                     for index in indexes:
@@ -137,22 +210,20 @@ class Main_window(QtWidgets.QMainWindow):
                         self.main_table_add_row(self.string_splitter(f.read(self.strlen)))
                         el_count += 1
             else:
-                msg = QtWidgets.QMessageBox()
-                msg.setIcon(QtWidgets.QMessageBox.Information)
-                msg.setText("Ничего не найдено!")
-                msg.exec()
+                show_critical_message("Ничего не найдено!")
 
         elif self.ui.delete_r.isChecked():
-            indexes, paths_hashes = self.get_unique_indexes(self.get_field(self.ui.small_input_table, 0), paths_needed=True)
+            indexes, paths_hashes = get_unique_indexes(self.get_field(self.ui.small_input_table, 0),
+                                                            paths_needed=True)
             if indexes is None:
-                open("main_table.txt", "w").close()
-                open("gaps.txt", "w").close()
+                open("main_table.txt", "w", encoding=db_encoding).close()
+                open("gaps.txt", "w", encoding=db_encoding).close()
                 for field in self.fields.keys():
                     rmtree(field)
                     mkdir(field)
             elif len(indexes):
                 for header, path in paths_hashes.items():
-                    f = open(path, "r+")
+                    f = open(path, "r+", encoding=db_encoding)
                     new_indexes = set([int(index) for index in f.read().split()]) - indexes
                     if len(new_indexes):
                         f.truncate(0)
@@ -163,7 +234,7 @@ class Main_window(QtWidgets.QMainWindow):
                         remove(path)
 
                 empty_string = spec_symbol * self.strlen
-                with open("gaps.txt", "a") as gaps:
+                with open("gaps.txt", "a", encoding=db_encoding) as gaps:
                     gaps.write(" ".join([str(i) for i in indexes]) + " ")
 
                 with open("main_table.txt", "r+", encoding=db_encoding) as f:
@@ -171,36 +242,10 @@ class Main_window(QtWidgets.QMainWindow):
                         f.seek(index * self.strlen)
                         f.write(empty_string)
             else:
-                msg = QtWidgets.QMessageBox()
-                msg.setIcon(QtWidgets.QMessageBox.Critical)
-                msg.setText("Ничего не было удалено так как под маску не подходит ни 1 поле!")
-                msg.exec()
+                show_critical_message("Ничего не было удалено так как под маску не подходит ни 1 поле!")
         else:
             # Обновить
             print("Обновить")
-
-    def get_unique_indexes(self, columns, paths_needed=False):
-        paths_hashes = {}
-        indexes = None
-        field_found_flag = False
-        for header, value in columns.items():
-            if value == "_*":
-                continue
-            try:
-                path = "/".join([header, self.get_hash_path(value), fnv.fnv32a(value)])
-                with open(path, "r") as f:
-                    cur_indexes = set([int(i) for i in f.read().split()])
-                    if not field_found_flag:
-                        indexes = cur_indexes
-                    else:
-                        indexes = indexes & cur_indexes
-                    field_found_flag = True
-                    if paths_needed:
-                        paths_hashes[header] = path
-            except:
-                indexes = set()
-                break
-        return indexes, paths_hashes
 
     def main_table_add_row(self, field):
         new_row_index = self.ui.main_table.rowCount()
@@ -229,17 +274,13 @@ class Main_window(QtWidgets.QMainWindow):
             columns[table.horizontalHeaderItem(i).text()] = item.text()
         return columns
 
-    def get_hash_path(self, word):
-        h = hasher(word.encode()).hexdigest()
-        return "/".join([h[i:i + 2] for i in range(0, len(h), 2)])
-
     def load_db(self):
         path = QtWidgets.QFileDialog.getExistingDirectory()
         if not path:
             return
         chdir(path)
         fields = OrderedDict()
-        msg = QtWidgets.QMessageBox()
+
         try:
             with open("db_config.cfg", "r") as cfg:
                 mt = self.ui.main_table
@@ -254,10 +295,8 @@ class Main_window(QtWidgets.QMainWindow):
                 for i, field in enumerate(lines):
                     field = field.split(":")
                     if not access(field[0], X_OK | W_OK | R_OK):
-                        msg.setIcon(QtWidgets.QMessageBox.Critical)
-                        msg.setText("База данных не валидна!\n"
-                                    "Невозможно найти папку для поля {0}!".format(field[0]))
-                        msg.exec()
+                        show_critical_message("База данных не валидна!\n"
+                                         "Невозможно найти папку для поля {0}!".format(field[0]))
                         return
                     else:
                         fields[field[0]] = [int(field[1]), int(field[2])]
@@ -288,10 +327,7 @@ class Main_window(QtWidgets.QMainWindow):
             self.ui.functional_widget.setEnabled(True)
             self.ui.main_table.setEnabled(True)
         except IOError:
-            msg.setIcon(QtWidgets.QMessageBox.Critical)
-            msg.setText("База данных не валидна!\n"
-                        "db_config.cfg не найден!")
-            msg.exec()
+            show_critical_message("База данных не валидна!\ndb_config.cfg не найден!")
 
     def create_new_table_dialog(self):
         dialog = Create_table_dialog(self)
@@ -317,16 +353,13 @@ class Create_table_dialog(QtWidgets.QDialog):
         self.ui.path_line.setText(QtWidgets.QFileDialog.getExistingDirectory())
 
     def create_table(self, fields, dir_path, table_name):
-        msg = QtWidgets.QMessageBox()
         chdir(dir_path)
         try:
             mkdir(table_name)
             chdir(table_name)
         except OSError:
-            msg.setIcon(QtWidgets.QMessageBox.Critical)
-            msg.setText("Невозможно создать базу данных по заданному пути!\n"
-                        "База данных(папка) {0} уже существует!".format(table_name))
-            msg.exec()
+            show_critical_message("Невозможно создать базу данных по заданному пути!\n"
+                                  "База данных(папка) {0} уже существует!".format(table_name))
             return
 
         with open("db_config.cfg", "w") as cfg:
@@ -334,25 +367,19 @@ class Create_table_dialog(QtWidgets.QDialog):
                 cfg.write("{0}:{1}:{2}\n".format(field[0], field[1], field[2]))
                 mkdir(field[0])
         open("main_table.txt", "w", encoding=db_encoding).close()
-        open("gaps.txt", "w").close()
+        open("gaps.txt", "w", encoding=db_encoding).close()
         chmod("db_config.cfg", 0o444)
-        msg.setIcon(QtWidgets.QMessageBox.Information)
-        msg.setText("База данных успешно создана, теперь вы можете ее загрузить!")
-        msg.exec()
+
+        show_information_message("База данных успешно создана, теперь вы можете ее загрузить!")
 
     def create_table_verification_wrapper(self):
-        msg = QtWidgets.QMessageBox()
         directory_path = self.ui.path_line.text()
         table_name = self.ui.table_name.text()
         if not access(directory_path, X_OK | W_OK | R_OK):
-            msg.setIcon(QtWidgets.QMessageBox.Critical)
-            msg.setText("Невозможно создать базу данных по заданному пути! Задайте правильный путь")
-            msg.exec()
+            show_critical_message("Невозможно создать базу данных по заданному пути! Задайте правильный путь")
             return
         if not len(table_name):
-            msg.setIcon(QtWidgets.QMessageBox.Critical)
-            msg.setText("Имя бд не установлено! Установите имя бд")
-            msg.exec()
+            show_critical_message("Имя бд не установлено! Установите имя бд")
             return
         fields = []
         for col in range(self.ui.layout_table.columnCount()):
@@ -363,18 +390,12 @@ class Create_table_dialog(QtWidgets.QDialog):
             if field_name.isalnum() and len(field_name) < 255 and field_len.isdigit():
                 fields.append([field_name, field_len, is_primary])
             else:
-                msg.setIcon(QtWidgets.QMessageBox.Critical)
-                msg.setText("Ошибка в заполнении поля " + field_name + ":" + field_len + " посмотрите help!")
-                msg.exec()
+                show_critical_message("Ошибка в заполнении поля " + field_name + ":" + field_len + " посмотрите help!")
                 return
         if len(fields) == 0:
-            msg.setIcon(QtWidgets.QMessageBox.Critical)
-            msg.setText("Не добавлено ни 1 поля!")
-            msg.exec()
+            show_critical_message("Не добавлено ни 1 поля!")
         elif len(set([field[0] for field in fields])) != len(fields):
-            msg.setIcon(QtWidgets.QMessageBox.Critical)
-            msg.setText("Не все поля уникальны!")
-            msg.exec()
+            show_critical_message("Не все поля уникальны!")
         else:
             self.create_table(fields, directory_path, table_name)
 
@@ -388,7 +409,6 @@ class Create_table_dialog(QtWidgets.QDialog):
             "Добавить поле - добавляет новое поле \n"
             "Красная кнопка - удаляет поле\n"
             "Желтая кнопка - меняет тип поля: синий цвет - первичный ключ, белый - обычное поле")
-        msg.setWindowTitle("Help")
         msg.exec()
 
     def add_field(self):
