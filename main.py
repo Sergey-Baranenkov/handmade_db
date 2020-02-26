@@ -3,7 +3,8 @@ from src.main_window import Ui_MainWindow as mw_dialog
 from PyQt5 import QtWidgets
 from PyQt5.QtCore import QRegExp
 from PyQt5.QtGui import QColor, QRegExpValidator
-from os import access, W_OK, R_OK, X_OK, chdir, mkdir, chmod, makedirs, rmdir
+from os import access, W_OK, R_OK, X_OK, chdir, mkdir, chmod, makedirs, remove
+from shutil import rmtree
 from os.path import basename, isfile, getsize
 from hashlib import sha3_512 as hasher
 import fnv
@@ -117,7 +118,7 @@ class Main_window(QtWidgets.QMainWindow):
 
         elif self.ui.select_r.isChecked():
             self.ui.main_table.setRowCount(0)
-            indexes = self.get_unique_indexes(self.get_field(self.ui.small_input_table, 0))
+            indexes = self.get_unique_indexes(self.get_field(self.ui.small_input_table, 0))[0]
             el_count = 0
             max_count = self.ui.count.value()
             if indexes is None:
@@ -136,54 +137,70 @@ class Main_window(QtWidgets.QMainWindow):
                         self.main_table_add_row(self.string_splitter(f.read(self.strlen)))
                         el_count += 1
             else:
-                msg = QtWidgets.QMessageBox
+                msg = QtWidgets.QMessageBox()
                 msg.setIcon(QtWidgets.QMessageBox.Information)
                 msg.setText("Ничего не найдено!")
                 msg.exec()
 
         elif self.ui.delete_r.isChecked():
-            indexes = self.get_unique_indexes(self.get_field(self.ui.small_input_table, 0))
+            indexes, paths_hashes = self.get_unique_indexes(self.get_field(self.ui.small_input_table, 0), paths_needed=True)
             if indexes is None:
                 open("main_table.txt", "w").close()
                 open("gaps.txt", "w").close()
                 for field in self.fields.keys():
-                    rmdir(field)
+                    rmtree(field)
                     mkdir(field)
             elif len(indexes):
-                pass
+                for header, path in paths_hashes.items():
+                    f = open(path, "r+")
+                    new_indexes = set([int(index) for index in f.read().split()]) - indexes
+                    if len(new_indexes):
+                        f.truncate(0)
+                        f.write(" ".join([str(i) for i in new_indexes]) + " ")
+                        f.close()
+                    else:
+                        f.close()
+                        remove(path)
+
+                empty_string = spec_symbol * self.strlen
+                with open("gaps.txt", "a") as gaps:
+                    gaps.write(" ".join([str(i) for i in indexes]) + " ")
+
+                with open("main_table.txt", "r+", encoding=db_encoding) as f:
+                    for index in indexes:
+                        f.seek(index * self.strlen)
+                        f.write(empty_string)
             else:
-                msg = QtWidgets.QMessageBox
+                msg = QtWidgets.QMessageBox()
                 msg.setIcon(QtWidgets.QMessageBox.Critical)
                 msg.setText("Ничего не было удалено так как под маску не подходит ни 1 поле!")
                 msg.exec()
-
-                with open("gaps.txt","a") as gaps:
-                    gaps.write(" ".join(indexes) + " ")
-
-
-
         else:
             # Обновить
             print("Обновить")
 
-    def get_unique_indexes(self, columns):
+    def get_unique_indexes(self, columns, paths_needed=False):
+        paths_hashes = {}
         indexes = None
         field_found_flag = False
         for header, value in columns.items():
             if value == "_*":
                 continue
             try:
-                with open("/".join([header, self.get_hash_path(value), fnv.fnv32a(value)]), "r") as f:
+                path = "/".join([header, self.get_hash_path(value), fnv.fnv32a(value)])
+                with open(path, "r") as f:
                     cur_indexes = set([int(i) for i in f.read().split()])
                     if not field_found_flag:
                         indexes = cur_indexes
                     else:
                         indexes = indexes & cur_indexes
                     field_found_flag = True
+                    if paths_needed:
+                        paths_hashes[header] = path
             except:
                 indexes = set()
                 break
-        return indexes
+        return indexes, paths_hashes
 
     def main_table_add_row(self, field):
         new_row_index = self.ui.main_table.rowCount()
