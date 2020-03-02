@@ -3,11 +3,12 @@ from src.main_window import Ui_MainWindow as mw_dialog
 from PyQt5 import QtWidgets
 from PyQt5.QtCore import QRegExp
 from PyQt5.QtGui import QColor, QRegExpValidator
-from os import access, W_OK, R_OK, X_OK, chdir, mkdir, chmod, makedirs, remove
-from shutil import rmtree
+from os import access, W_OK, R_OK, X_OK, chdir, mkdir, chmod, makedirs
+from shutil import rmtree, copytree
 from os.path import basename, isfile, getsize, isdir
 from hashlib import sha3_256 as hasher
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
+from datetime import datetime
 
 primary_color = QColor(176, 224, 230)
 white_color = QColor(255, 255, 255)
@@ -43,16 +44,16 @@ def show_information_message(message):
 def get_indexes(path, field_name):
     path = path + "/" + uf_fname
     if isfile(path):
-        i = {'start': 0, 'end': 0}
+        i = [0, 0]
         with open(path, "r", encoding=db_encoding) as f:
             for line in f:
-                i['end'] += len(line)
+                i[1] += len(line)
                 line = line.rstrip().split(spec_symbol, maxsplit=1)
                 if line[0] == field_name:
-                    return set([int(idx) for idx in line[1].split()]), i
-                i['start'] = i['end']
+                    return tuple([int(idx) for idx in line[1].split()]), tuple(i)
+                i[0] = i[1]
 
-    return set(), None
+    return tuple(), None
 
 
 def get_hash_path(word):
@@ -61,10 +62,9 @@ def get_hash_path(word):
     return hp
 
 
-def get_unique_indexes(fields, paths_needed=False, current_indexes_needed=False):
-    paths_hashes = {}
-    current_indexes = {}
-    indexes = set()
+def get_unique_indexes(fields, add_info_needed=False):
+    add_info = defaultdict(set)
+    unique_indexes = set()
 
     get_all = True
     for header, value in fields.items():
@@ -74,26 +74,24 @@ def get_unique_indexes(fields, paths_needed=False, current_indexes_needed=False)
         hash_path = get_hash_path(value)
 
         if cur_field_indexes := get_indexes(header + "/" + hash_path, field_name=value):
-            if paths_needed:
-                paths_hashes[header] = header + "/" + hash_path + "/" + uf_fname
-            if current_indexes_needed:
-                current_indexes[header] = cur_field_indexes
+            if add_info_needed:
+                add_info[header] = {(hash_path + "/" + uf_fname, cur_field_indexes)}  # хеш, подходящие индексы
 
             if get_all:
-                indexes = cur_field_indexes[0]
+                unique_indexes = set(cur_field_indexes[0])
             else:
-                indexes = indexes & cur_field_indexes[0]
+                unique_indexes = unique_indexes & set(cur_field_indexes[0])
 
             get_all = False
         else:
-            indexes = set()
+            unique_indexes = set()
             get_all = False
             break
 
     if get_all:
-        indexes = "_*"
+        unique_indexes = "_*"
 
-    return indexes, paths_hashes, current_indexes
+    return unique_indexes, add_info
 
 
 def get_options(table, row):
@@ -119,26 +117,30 @@ class Main_window(QtWidgets.QMainWindow):
         self.ui.delete_r.toggled.connect(self.func_radio)
         self.ui.update_r.toggled.connect(self.func_radio)
         self.ui.export_button.clicked.connect(self.export_csv)
+        self.ui.make_backup_button.clicked.connect(self.create_backup)
         self.ui.create_db_button.clicked.connect(self.create_new_table_dialog)
         self.ui.load_existing_db_button.clicked.connect(self.load_db)
         self.path = None
         self.fields = None
         self.strlen = 0
 
-    def export_csv(self):
-        path = QtWidgets.QFileDialog.getExistingDirectory()
-        if not path:
-            show_critical_message("Выберите путь!")
-            return
+    def create_backup(self):
+        try:
+            b_name = str(datetime.now())
+            copytree(".", "./" + b_name)
+            show_information_message("Успешно")
+        except Exception as e:
+            show_critical_message(str(e))
 
+    def export_csv(self):
         mt = self.ui.main_table
-        with open(self.ui.db_name.text() + ".csv", "w") as f:
+        with open(str(datetime.now()) + ".csv", "w") as f:
             f.write(",".join([mt.horizontalHeaderItem(i).text() for i in range(mt.columnCount())]) + "\n")
             for i in range(mt.rowCount()):
                 row = []
                 for j in range(mt.columnCount()):
                     row.append(mt.item(i, j).text())
-                f.write(",".join(row)+"\n")
+                f.write(",".join(row) + "\n")
         show_information_message("Успешно!")
 
     def func_radio(self):
@@ -169,12 +171,13 @@ class Main_window(QtWidgets.QMainWindow):
                 raise Exception(
                     "Поле {0} превышает допустимую длину на {1}!".format(header, len(value) - self.fields[header][0]))
 
-        with open("gaps.txt", "r+", encoding=db_encoding) as gaps:
-            all_gaps = gaps.read().split()
+        with open("gaps.txt", "r+", encoding=db_encoding) as gaps_f:
+            all_gaps = gaps_f.read().split()
             write_index = int(all_gaps.pop() if all_gaps else getsize("main_table.txt") / self.strlen)
-            gaps.truncate(0)
+            gaps_f.truncate(0)
+            gaps_f.seek(0)
             if all_gaps:
-                gaps.write(" ".join(all_gaps) + " ")
+                gaps_f.write(" ".join(all_gaps) + " ")
 
         record_string = ""
         for header, value in fields.items():
@@ -189,9 +192,9 @@ class Main_window(QtWidgets.QMainWindow):
             with open(hash_path_with_root + "/" + uf_fname, "r+", encoding=db_encoding) as file:
                 ending = ""
                 if i is not None:
-                    file.seek(i['end'])
+                    file.seek(i[1])
                     ending = file.read()
-                    file.truncate(i['end'] - 1)
+                    file.truncate(i[1] - 1)
 
                 file.seek(0, 2)
 
@@ -221,7 +224,7 @@ class Main_window(QtWidgets.QMainWindow):
                     if el_count >= max_count:
                         break
                     self.main_table_add_row(self.string_splitter(field))
-                    #self.string_splitter(field)
+                    # self.string_splitter(field)
                     el_count += 1
 
         elif len(indexes):
@@ -236,8 +239,7 @@ class Main_window(QtWidgets.QMainWindow):
             raise Exception("Ничего не найдено!")
 
     def delete_row(self, fields):
-        unique_indexes, paths_hashes, cur_indexes = get_unique_indexes(fields, paths_needed=True,
-                                                                       current_indexes_needed=True)
+        unique_indexes, add_info = get_unique_indexes(fields, add_info_needed=True)
         if unique_indexes == "_*":
             for header in self.fields.keys():
                 rmtree(header)
@@ -249,21 +251,31 @@ class Main_window(QtWidgets.QMainWindow):
         if not len(unique_indexes):
             raise Exception("Ничего не найдено")
 
-        if len(cur_indexes) != len(self.fields.keys()):
-            raise Exception("Вы можете удалить либо все записи, либо только одну!")
+        elif len(add_info) != len(fields.keys()):
+            any_keys_headers = [h for h in fields.keys() if h not in add_info.keys()]
 
-        for header, path in paths_hashes.items():
-            with open(path, "r+", encoding=db_encoding) as f:
-                f.seek(cur_indexes[header][1]["end"])
-                ending = f.read()
-                if diff := cur_indexes[header][0] - unique_indexes:
-                    f.truncate(cur_indexes[header][1]["start"] + len(fields[header]) + 1)
-                    f.seek(0, 2)
-                    f.write(" ".join([str(i) for i in diff]) + " \n" + ending)
-                else:
-                    f.truncate(cur_indexes[header][1]["start"])
-                    f.seek(0, 2)
-                    f.write(ending)
+            with open("main_table.txt", "r", encoding=db_encoding) as mt:
+                for index in unique_indexes:
+                    mt.seek(index * self.strlen)
+                    split = self.string_splitter(mt.read(self.strlen), only_required_fields=any_keys_headers)
+                    for i, key in enumerate(any_keys_headers):
+                        path = get_hash_path(split[i])
+                        print(key)
+                        add_info[key].add((path + "/" + uf_fname, get_indexes(key + "/" + path, field_name=split[i])))
+
+        for header, info in add_info.items():
+            for field in info:
+                with open(header + "/" + field[0], "r+", encoding=db_encoding) as f:
+                    f.seek(field[1][1][1])
+                    ending = f.read()
+                    if diff := set(field[1][0]) - unique_indexes:
+                        f.truncate(field[1][1][0] + len(fields[header]) + 1)
+                        f.seek(0, 2)
+                        f.write(" ".join([str(i) for i in diff]) + " \n" + ending)
+                    else:
+                        f.truncate(field[1][1][0])
+                        f.seek(0, 2)
+                        f.write(ending)
 
         with open("gaps.txt", "a", encoding=db_encoding) as gaps_f:
             gaps_f.write(" ".join([str(i) for i in unique_indexes]) + " ")
@@ -272,8 +284,9 @@ class Main_window(QtWidgets.QMainWindow):
         for header, value in row_to.items():
             if self.fields[header][0] == 1 and value != row_from[header] and isfile(header + "/" + get_hash_path(value) + "/" + uf_fname):
                 raise Exception("Такой первичный ключ уже существует!")
-            elif value == "_*" or row_from[header] == "_*":
-                raise Exception("Вы можете обновить только 1 поле, знак _* запрещен!")
+            elif row_from[header] == "_*" or value == "_*":
+                raise Exception("Нельзя использовать _*, можно обновить только 1 запись")
+
         self.delete_row(row_from)
         self.add_row(row_to)
 
@@ -315,18 +328,25 @@ class Main_window(QtWidgets.QMainWindow):
         for i, el in enumerate(field):
             self.ui.main_table.setItem(new_row_index, i, QtWidgets.QTableWidgetItem(el))
 
-    def string_splitter(self, string):
+    def string_splitter(self, string, only_required_fields=None):
+        start, end = 0, 0
+        if only_required_fields is None:
+            only_required_fields = []
         split_string = []
-        start = 0
-        end = 0
-        for info in self.fields.values():
-            tmp_s = ""
+
+        for header, info in self.fields.items():
             end += info[0]
-            while start != end and string[start] != spec_symbol:
-                tmp_s += string[start]
-                start += 1
+
+            if only_required_fields and header not in only_required_fields:
+                start = end
+                continue
+
+            i = string.find(spec_symbol, start, end)  # ищем спец символ
+            i = end if i == -1 else i
+
+            split_string.append(string[start:i])
             start = end
-            split_string.append(tmp_s)
+
         return split_string
 
     def load_db(self, my_path=""):
@@ -470,8 +490,8 @@ class Create_table_dialog(QtWidgets.QDialog):
         c_count = self.ui.layout_table.columnCount()
         self.ui.layout_table.setColumnCount(c_count + 1)
         self.ui.layout_table.setHorizontalHeaderItem(c_count, QtWidgets.QTableWidgetItem())
-        item1 = QtWidgets.QTableWidgetItem("000")
-        item2 = QtWidgets.QTableWidgetItem("111")
+        item1 = QtWidgets.QTableWidgetItem("поле")
+        item2 = QtWidgets.QTableWidgetItem("5")
         self.ui.layout_table.setItem(0, c_count, item1)
         self.ui.layout_table.setItem(1, c_count, item2)
         button_group = QtWidgets.QWidget()
@@ -508,34 +528,37 @@ def main():
     app = QtWidgets.QApplication([])
     main_menu = Main_window()
     main_menu.load_db("/home/araxal/dbtest/test")
-    """
-    n = 100
+    n = 10
     collision_cf = 100
     from time import time
     from matplotlib import pyplot as plt
 
     main_menu.delete_row({'п1': "_*", 'п2': "_*"})
     add_timer = []
-
     for i in range(n):
         s = time()
-        main_menu.add_row({'п1': str(i), 'п2': str(i % collision_cf)})
-        add_timer.append(time()-s)
-
+        main_menu.add_row({'п1': str(i), 'п2': str("ff")})
+        s = time() - s
+        add_timer.append(s if s < 0.1 else 0)
+    """
     plt.plot([i for i in range(n)], add_timer)
     plt.show()
+
     delete_timer = []
     for i in range(n):
         s = time()
         main_menu.delete_row({'п1': str(i), 'п2': str(i % collision_cf)})
-        delete_timer.append(time()-s)
+        s = time() - s
+        delete_timer.append(s if s < 0.1 else 0)
 
     plt.plot([i for i in range(n)], delete_timer)
     plt.show()
-    main_menu.delete_row({'п1': "_*", 'п2': "_*"})
     """
+    #main_menu.delete_row({"п1": "_*", "п2": "ff"})
+
     main_menu.show()
     exit(app.exec())
+
 
 if __name__ == '__main__':
     main()

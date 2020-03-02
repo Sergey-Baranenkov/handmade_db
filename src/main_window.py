@@ -153,7 +153,7 @@ class Ui_MainWindow(object):
         item = self.big_input_table.verticalHeaderItem(0)
         item.setText(_translate("MainWindow", "Что"))
         item = self.big_input_table.verticalHeaderItem(1)
-        item.setText(_translate("MainWindow", "Где"))
+        item.setText(_translate("MainWindow", "Новое знач"))
         self.export_button.setText(_translate("MainWindow", "Экспортировать"))
         self.make_backup_button.setText(_translate("MainWindow", "Создать бэкап"))
         self.execute_command.setText(_translate("MainWindow", "Исполнить команду"))
