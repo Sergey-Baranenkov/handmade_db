@@ -68,24 +68,9 @@ class Main_window(QtWidgets.QMainWindow):
         else:
             self.ui.stackedWidget.setCurrentIndex(0)
 
-    def add_row(self, fields):
-        p_hashes = {}
-        for header, value in fields.items():
-            if not check_encoding(value, db_encoding):
-                raise Exception("Поле {0} не соответствует доступным символам!".format(header))
-            elif value == "_*":
-                raise Exception("_* - зарезервированный символ для поиска по всему полю")
-
-            if self.fields[header][1] == 1:  # если primary key
-                if len(value) == 0:
-                    raise Exception("Primary key поле {0} не заполнено!".format(header))
-                hash_path = get_hash_path(value)
-                if len(get_indexes(header + "/" + hash_path, value)[0]):
-                    raise Exception("Primary key {0} уже существует!".format(header))
-                p_hashes[value] = hash_path
-            elif len(value) > self.fields[header][0]:
-                raise Exception(
-                    "Поле {0} превышает допустимую длину на {1}!".format(header, len(value) - self.fields[header][0]))
+    def add_row(self, fields, p_hashes=None):
+        if p_hashes is None:
+            p_hashes = {}
 
         with open("gaps.txt", "r+", encoding=db_encoding) as gaps_f:
             all_gaps = gaps_f.read().split()
@@ -126,7 +111,7 @@ class Main_window(QtWidgets.QMainWindow):
         el_count = 0
         max_count = self.ui.count.value()
 
-        if indexes == "_*":
+        if indexes == "*":
             with open("main_table.txt", "r", encoding=db_encoding) as f, \
                     open("gaps.txt", "r", encoding=db_encoding) as gaps:
 
@@ -156,7 +141,7 @@ class Main_window(QtWidgets.QMainWindow):
 
     def delete_row(self, fields):
         unique_indexes, add_info = get_unique_indexes(fields, add_info_needed=True)
-        if unique_indexes == "_*":
+        if unique_indexes == "*":
             for header in self.fields.keys():
                 rmtree(header)
                 mkdir(header)
@@ -176,7 +161,6 @@ class Main_window(QtWidgets.QMainWindow):
                     split = self.string_splitter(mt.read(self.strlen), only_required_fields=any_keys_headers)
                     for i, key in enumerate(any_keys_headers):
                         path = get_hash_path(split[i])
-                        print(key)
                         add_info[key].add((path + "/" + uf_fname, get_indexes(key + "/" + path, field_name=split[i])))
 
         for header, info in add_info.items():
@@ -197,19 +181,20 @@ class Main_window(QtWidgets.QMainWindow):
             gaps_f.write(" ".join([str(i) for i in unique_indexes]) + " ")
 
     def update_row(self, row_from, row_to):
+        p_hashes = self.check_what_fields(row_to, check_pkey=False)
         for header, value in row_to.items():
-            if self.fields[header][0] == 1 and value != row_from[header] and isfile(header + "/" + get_hash_path(value) + "/" + uf_fname):
+            if self.fields[header][1] == 1 and value != row_from[header] and isfile(header + "/" + p_hashes[value] + "/" + uf_fname):
                 raise Exception("Такой первичный ключ уже существует!")
-            elif row_from[header] == "_*" or value == "_*":
-                raise Exception("Нельзя использовать _*, можно обновить только 1 запись")
-
+            
         self.delete_row(row_from)
-        self.add_row(row_to)
+        self.add_row(row_to, p_hashes)
 
     def executor(self):
         if self.ui.add_r.isChecked():
             try:
-                self.add_row(get_options(self.ui.small_input_table, 0))
+                fields = get_options(self.ui.small_input_table, 0)
+                p_hashes = self.check_what_fields(fields)
+                self.add_row(fields, p_hashes)
                 show_information_message("Успешно")
             except Exception as e:
                 show_critical_message(str(e))
@@ -230,9 +215,9 @@ class Main_window(QtWidgets.QMainWindow):
                 show_critical_message(str(e))
 
         elif self.ui.update_r.isChecked():
-            row_from = get_options(self.ui.big_input_table, 0)
-            row_to = get_options(self.ui.big_input_table, 1)
             try:
+                row_from = get_options(self.ui.big_input_table, 0)
+                row_to = get_options(self.ui.big_input_table, 1)
                 self.update_row(row_from, row_to)
                 show_information_message("Успешно")
             except Exception as e:
@@ -319,6 +304,27 @@ class Main_window(QtWidgets.QMainWindow):
             self.ui.main_table.setEnabled(True)
         except IOError:
             show_critical_message("База данных не валидна!\ndb_config.cfg не найден!")
+
+    def check_what_fields(self, fields, check_pkey=True):
+        p_hashes = {}
+        print(fields)
+        for header, value in fields.items():
+            if not check_encoding(value, db_encoding):
+                raise Exception("Поле {0} не соответствует доступным символам!".format(header))
+            if value == "*":
+                raise Exception("* - зарезервированный символ для поиска по всему полю")
+
+            print(header, value, self.fields[header][1], self.fields[header][0])
+            if self.fields[header][1] == 1:  # если primary key
+                hash_path = get_hash_path(value)
+                if len(get_indexes(header + "/" + hash_path, value)[0]) and check_pkey:
+                    raise Exception("Primary key {0} уже существует!".format(header))
+                p_hashes[value] = hash_path
+
+            if len(value) > self.fields[header][0]:
+                raise Exception(
+                    "Поле {0} превышает допустимую длину на {1}!".format(header, len(value) - self.fields[header][0]))
+        return p_hashes
 
     def create_new_table_dialog(self):
         dialog = Create_table_dialog(self)

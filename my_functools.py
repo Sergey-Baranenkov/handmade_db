@@ -38,7 +38,7 @@ def get_unique_indexes(fields, add_info_needed=False):
 
     get_all = True
     for header, value in fields.items():
-        if value == "_*":
+        if value == "*":
             continue
 
         hash_path = get_hash_path(value)
@@ -59,7 +59,7 @@ def get_unique_indexes(fields, add_info_needed=False):
             break
 
     if get_all:
-        unique_indexes = "_*"
+        unique_indexes = "*"
 
     return unique_indexes, add_info
 
