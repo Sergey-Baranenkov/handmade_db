@@ -125,7 +125,6 @@ class Main_window(QtWidgets.QMainWindow):
                     if el_count >= max_count:
                         break
                     self.main_table_add_row(self.string_splitter(field))
-                    # self.string_splitter(field)
                     el_count += 1
 
         elif len(indexes):
@@ -307,14 +306,12 @@ class Main_window(QtWidgets.QMainWindow):
 
     def check_what_fields(self, fields, check_pkey=True):
         p_hashes = {}
-        print(fields)
         for header, value in fields.items():
             if not check_encoding(value, db_encoding):
                 raise Exception("Поле {0} не соответствует доступным символам!".format(header))
             if value == "*":
                 raise Exception("* - зарезервированный символ для поиска по всему полю")
 
-            print(header, value, self.fields[header][1], self.fields[header][0])
             if self.fields[header][1] == 1:  # если primary key
                 hash_path = get_hash_path(value)
                 if len(get_indexes(header + "/" + hash_path, value)[0]) and check_pkey:

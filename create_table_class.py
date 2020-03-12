@@ -50,8 +50,8 @@ class Create_table_dialog(QtWidgets.QDialog):
         if not access(directory_path, X_OK | W_OK | R_OK):
             show_critical_message("Невозможно создать базу данных по заданному пути! Задайте правильный путь")
             return
-        if not len(table_name):
-            show_critical_message("Имя бд не установлено! Установите имя бд")
+        if not table_name.isalnum():
+            show_critical_message("Имя бд установлено неправильно, оно не должно быть пустым и доложно состоять из цифр/символов")
             return
         fields = []
         for col in range(self.ui.layout_table.columnCount()):
